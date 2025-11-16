@@ -871,13 +871,14 @@ void saveConfig() {
         return;
     }
 
-    if (serializeJson(json, configFile) == 0) {
+    size_t bytesWritten = serializeJson(json, configFile);
+    configFile.close();
+
+    if (bytesWritten == 0) {
         Serial.println("Failed to write JSON to file");
     } else {
-        Serial.printf("Config saved (%d bytes)\n", configFile.size());
+        Serial.printf("Config saved (%d bytes)\n", bytesWritten);
     }
-
-    configFile.close();
 
     // Update version in EEPROM for compatibility checking
     EEPROM.begin(EEPROM_SIZE);
@@ -1062,7 +1063,7 @@ void setup() {
     });
 
     server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        AsyncJsonResponse * response = new AsyncJsonResponse();
+        AsyncJsonResponse * response = new AsyncJsonResponse(false, 16384);  // 16KB buffer for 20 servers
         JsonObject root = response->getRoot();
 
         root["firmware_version"] = CONFIG_VERSION;
