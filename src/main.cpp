@@ -71,7 +71,8 @@ int serialLogBufferPos = 0;
 unsigned long lastWifiReconnectAttempt = 0;
 const long wifiReconnectInterval = 10000; // Try to reconnect every 10 seconds
 
-AsyncWebServer server(80);
+// AsyncWebServer - initialize after WiFiManager to avoid port 80 conflict
+AsyncWebServer* server = nullptr;
 
 // --- HTML for the Firmware Update Page ---
 const char* UPDATE_HTML = R"rawliteral(
@@ -1059,15 +1060,19 @@ void setup() {
     gmtOffset_sec = gmt_offset * 3600;
     configTime(gmtOffset_sec, 0, ntpServer);
 
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    // Initialize AsyncWebServer now that WiFiManager has completed
+    // (Avoids port 80 conflict with WiFiManager's config portal)
+    server = new AsyncWebServer(80);
+
+    server->on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(200, "text/html", INDEX_HTML);
     });
 
-    server.on("/api/logs", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server->on("/api/logs", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(200, "text/plain", serialLogBuffer);
     });
 
-    server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server->on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request) {
         AsyncJsonResponse * response = new AsyncJsonResponse(false, 16384);  // 16KB buffer for 20 servers
         JsonObject root = response->getRoot();
 
@@ -1112,7 +1117,7 @@ void setup() {
         request->send(response);
     });
     
-    server.on("/api/settings", HTTP_POST, [](AsyncWebServerRequest *request) {
+    server->on("/api/settings", HTTP_POST, [](AsyncWebServerRequest *request) {
         for (int i = 0; i < request->params(); i++) {
             const AsyncWebParameter* p = request->getParam(i);
             if (!p->isPost()) continue;
@@ -1164,7 +1169,7 @@ void setup() {
     });
 
     // GET /api/groups - Get list of unique groups
-    server.on("/api/groups", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server->on("/api/groups", HTTP_GET, [](AsyncWebServerRequest *request) {
         AsyncJsonResponse * response = new AsyncJsonResponse();
         JsonArray groups = response->getRoot().to<JsonArray>();
 
@@ -1198,7 +1203,7 @@ void setup() {
     });
 
     // POST /api/server/add - Add new server
-    server.on("/api/server/add", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
+    server->on("/api/server/add", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
         [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
             if (index == 0) {
                 DynamicJsonDocument json(1024);
@@ -1235,7 +1240,7 @@ void setup() {
         });
 
     // POST /api/server/delete - Delete (disable) server
-    server.on("/api/server/delete", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
+    server->on("/api/server/delete", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
         [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
             if (index == 0) {
                 DynamicJsonDocument json(256);
@@ -1256,7 +1261,7 @@ void setup() {
         });
 
     // POST /api/server/update - Update server configuration
-    server.on("/api/server/update", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
+    server->on("/api/server/update", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
         [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
             if (index == 0) {
                 DynamicJsonDocument json(2048);
@@ -1294,7 +1299,7 @@ void setup() {
         });
 
     // POST /api/group/rename - Rename a group across all servers
-    server.on("/api/group/rename", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
+    server->on("/api/group/rename", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
         [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
             if (index == 0) {
                 DynamicJsonDocument json(256);
@@ -1320,11 +1325,11 @@ void setup() {
             }
         });
 
-    server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server->on("/update", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(200, "text/html", UPDATE_HTML);
     });
     
-    server.on("/updatefirmware", HTTP_POST, 
+    server->on("/updatefirmware", HTTP_POST, 
         [](AsyncWebServerRequest *request) {
             request->send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
         }, 
@@ -1357,7 +1362,7 @@ void setup() {
         web_log_printf("Error starting mDNS");
     }
 
-    server.begin();
+    server->begin();
     web_log_printf("Web server started on port 80");
     web_log_printf("==========================================");
 }
