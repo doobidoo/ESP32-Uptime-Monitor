@@ -701,12 +701,26 @@ void resetToDefault() {
         Serial.println("LittleFS config cleared.");
     }
 
-    // Clear WiFiManager settings
+    // NOTE: WiFi credentials are NOT cleared here
+    // WiFiManager stores credentials in NVS independently of app config
+    // WiFi credentials should persist across app config version changes
+    // Use factoryReset() function instead if you need to clear WiFi credentials
+
+    Serial.println("App settings reset to defaults (WiFi credentials preserved).");
+}
+
+void factoryReset() {
+    Serial.println("Performing FACTORY RESET - clearing ALL settings including WiFi...");
+
+    // Clear app settings
+    resetToDefault();
+
+    // Clear WiFiManager settings (WiFi credentials)
     WiFiManager wifiManager;
     wifiManager.resetSettings();
     Serial.println("WiFi credentials cleared.");
 
-    Serial.println("All settings reset to defaults.");
+    Serial.println("Factory reset complete. Device will restart.");
 }
 
 // WiFiManager callback notifying us of the need to save config
@@ -1319,7 +1333,7 @@ void setup() {
             if (final) {
                 if (Update.end(true)) {
                     web_log_printf("Update Success: %u bytes", index + len);
-                    resetToDefault();
+                    // Config migration handled by setup() on next boot
                     delay(1000);
                     ESP.restart();
                 } else {
