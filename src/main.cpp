@@ -1013,9 +1013,6 @@ void setup() {
     // Try to connect automatically, if fails start portal
     wifiManager.setConnectRetries(3);
 
-    // Set connection timeout to 10 seconds (reduces wait time when portal disappears)
-    wifiManager.setConnectTimeout(10);
-
     // Disable config portal timeout (keep portal open indefinitely)
     wifiManager.setConfigPortalTimeout(0);
 
