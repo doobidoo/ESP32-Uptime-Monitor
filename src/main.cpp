@@ -895,6 +895,7 @@ void updatePingStats(int index) {
 void sendNotifications(int index, const char* msg) {
     TargetConfig target = targets[index];
     HTTPClient http;
+    http.setTimeout(3000);  // 3 second timeout for notifications
 
     if (strcmp(target.discord_webhook_url, "0") != 0 && strlen(target.discord_webhook_url) > 10) {
         http.begin(target.discord_webhook_url);
@@ -931,6 +932,7 @@ void sendNotifications(int index, const char* msg) {
 void sendCustomHttpRequest(const char* url) {
     if (strcmp(url, "0") == 0 || strlen(url) < 10) return;
     HTTPClient http;
+    http.setTimeout(3000);  // 3 second timeout
     http.begin(url);
     http.GET();
     http.end();
@@ -1387,6 +1389,7 @@ void loop() {
 
             HTTPClient http;
             http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+            http.setTimeout(5000);  // 5 second timeout to prevent blocking AsyncWebServer
             http.begin(targets[i].weburl);
             unsigned long singleStartTime = millis();
             int currentHttpCode = http.GET();
