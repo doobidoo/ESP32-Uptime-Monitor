@@ -1,0 +1,16 @@
+# PlatformIO build artifacts
+.pio/
+.vscode/
+
+# IDE files
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
