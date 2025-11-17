@@ -1457,6 +1457,10 @@ void loop() {
             }
             web_log_printf("[Server %d] URL: %s, Status: %d, Ping: %lu ms, Fails: %d, Successes: %d",
                 i + 1, targets[i].weburl, httpCode[i], pingTime[i], failure_count[i], success_count[i]);
+
+            // Yield to allow AsyncWebServer to process requests
+            yield();
+            delay(10);
         }
     }
     delay(100);
