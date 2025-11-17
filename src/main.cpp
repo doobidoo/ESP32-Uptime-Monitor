@@ -60,6 +60,7 @@ unsigned long last_check_time[NUM_TARGETS] = {0};
 uint8_t failure_count[NUM_TARGETS] = {0};
 uint8_t success_count[NUM_TARGETS] = {0};
 bool confirmed_online_state[NUM_TARGETS] = {true};
+int current_check_index = 0;  // Track which server to check next (time-distributed checks)
 
 // --- Buffers for logs to prevent memory fragmentation ---
 const int TARGET_LOG_SIZE = 1024;
@@ -76,14 +77,14 @@ const long wifiReconnectInterval = 10000; // Try to reconnect every 10 seconds
 AsyncWebServer* server = nullptr;
 
 // --- HTML for the Firmware Update Page ---
-const char* UPDATE_HTML = R"rawliteral(
+const char UPDATE_HTML[] PROGMEM = R"rawliteral(
 <form method='POST' action='/updatefirmware' enctype='multipart/form-data' id='upload_form'><h2>Firmware Update</h2><p>Upload the new .bin file here. <strong>Warning:</strong> After the update, all settings will be reset to their default values.</p><input type='file' name='update' id='file' onchange='sub(this)' style='display:none'><label id='file-input' for='file'>Choose File...</label><input type='submit' class='btn' value='Start Update'><br><br><div id='prg'>Progress: 0%</div><br><div id='prgbar'><div id='bar'></div></div></form><script>function sub(obj){var fileName=obj.value.split('\\').pop();document.getElementById('file-input').innerHTML=fileName}
 document.getElementById('upload_form').onsubmit=function(e){e.preventDefault();var form=document.getElementById('upload_form');var data=new FormData(form);var xhr=new XMLHttpRequest();xhr.open('POST','/updatefirmware',true);xhr.upload.onprogress=function(evt){if(evt.lengthComputable){var per=Math.round((evt.loaded/evt.total)*100);document.getElementById('prg').innerHTML='Progress: '+per+'%';document.getElementById('bar').style.width=per+'%'}};xhr.onload=function(){if(xhr.status===200){alert('Update successful! The device will restart with default settings.')}else{alert('Update failed! Status: '+xhr.status)}};xhr.send(data)};</script><style>body{background:#121212;font-family:sans-serif;font-size:14px;color:#e0e0e0}form{background:#1e1e1e;max-width:300px;margin:75px auto;padding:30px;border-radius:8px;text-align:center;border:1px solid #333}#file-input,.btn{width:100%;height:44px;border-radius:4px;margin:10px auto;font-size:15px}.btn{background:#3498db;color:#fff;cursor:pointer;border:0;padding:0 15px}.btn:hover{background-color:#2980b9}#file-input{padding:0;border:1px solid #333;line-height:44px;text-align:left;display:block;cursor:pointer;padding-left:10px}#prgbar{background-color:#333;border-radius:10px}#bar{background-color:#3498db;width:0%;height:10px;border-radius:10px}</style>
 )rawliteral";
 
 
 // --- HTML, CSS & JS for the modern web interface ---
-const char* INDEX_HTML = R"rawliteral(
+const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1078,7 +1079,7 @@ void setup() {
     server = new AsyncWebServer(80);
 
     server->on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/html", INDEX_HTML);
+        request->send(200, "text/html", FPSTR(INDEX_HTML));
     });
 
     server->on("/api/logs", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -1339,7 +1340,7 @@ void setup() {
         });
 
     server->on("/update", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/html", UPDATE_HTML);
+        request->send(200, "text/html", FPSTR(UPDATE_HTML));
     });
     
     server->on("/updatefirmware", HTTP_POST, 
@@ -1384,22 +1385,44 @@ void setup() {
 void loop() {
     manageWifiConnection();
 
+    // Heap monitoring for diagnostics (every 60 seconds)
+    static unsigned long lastHeapCheck = 0;
+    if (millis() - lastHeapCheck > 60000) {
+        uint32_t freeHeap = ESP.getFreeHeap();
+        uint32_t minHeap = ESP.getMinFreeHeap();
+        uint32_t maxBlock = ESP.getMaxAllocHeap();
+        int fragmentation = 100 - ((maxBlock * 100) / freeHeap);
+        web_log_printf("Heap - Free: %lu, Min: %lu, MaxBlock: %lu, Frag: %d%%",
+            freeHeap, minHeap, maxBlock, fragmentation);
+        lastHeapCheck = millis();
+    }
+
     if (WiFi.status() == WL_CONNECTED) {
-        for (int i = 0; i < NUM_TARGETS; i++) {
+        // Time-distributed check: Check ONE server per loop iteration
+        // This reduces peak memory usage and prevents heap exhaustion
+        int checks_attempted = 0;
+
+        // Find next enabled server that's due for a check
+        while (checks_attempted < NUM_TARGETS) {
+            int i = current_check_index;
+
             // Skip disabled servers
-            if (!targets[i].enabled) {
+            if (!targets[i].enabled || strcmp(targets[i].weburl, "0") == 0 || strlen(targets[i].weburl) < 10) {
                 httpCode[i] = 0;
+                current_check_index = (current_check_index + 1) % NUM_TARGETS;
+                checks_attempted++;
                 continue;
             }
 
-            if (strcmp(targets[i].weburl, "0") == 0 || strlen(targets[i].weburl) < 10) {
-                httpCode[i] = 0;
+            // Check if enough time has elapsed since last check (skip if not ready)
+            // Allow immediate check on first boot (when last_check_time[i] == 0)
+            if (last_check_time[i] > 0 && millis() - last_check_time[i] < (targets[i].check_interval_seconds * 1000)) {
+                current_check_index = (current_check_index + 1) % NUM_TARGETS;
+                checks_attempted++;
                 continue;
             }
 
-            if (millis() - last_check_time[i] < (targets[i].check_interval_seconds * 1000)) {
-                continue;
-            }
+            // Perform the check
             last_check_time[i] = millis();
 
             HTTPClient http;
@@ -1410,7 +1433,7 @@ void loop() {
             int currentHttpCode = http.GET();
             unsigned long singleEndTime = millis();
             http.end();
-            
+
             pingTime[i] = singleEndTime - singleStartTime;
             httpCode[i] = currentHttpCode;
             updatePingStats(i);
@@ -1440,7 +1463,7 @@ void loop() {
                 failure_count[i]++;
                 if (confirmed_online_state[i] == true && failure_count[i] >= targets[i].failure_threshold) {
                     confirmed_online_state[i] = false;
-                    
+
                     String message = targets[i].offline_message;
                     message.replace("{NAME}", targets[i].server_name);
                     message.replace("{URL}", targets[i].weburl);
@@ -1458,10 +1481,11 @@ void loop() {
             web_log_printf("[Server %d] URL: %s, Status: %d, Ping: %lu ms, Fails: %d, Successes: %d",
                 i + 1, targets[i].weburl, httpCode[i], pingTime[i], failure_count[i], success_count[i]);
 
-            // Yield to allow AsyncWebServer to process requests
-            yield();
-            delay(10);
+            // Move to next server and break out of while loop
+            current_check_index = (current_check_index + 1) % NUM_TARGETS;
+            break;  // Only check one server per loop iteration
         }
     }
-    delay(100);
+
+    delay(100);  // Small delay before next loop iteration
 }
