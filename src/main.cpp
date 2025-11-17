@@ -8,6 +8,7 @@
 #include <stdarg.h>
 #include <LittleFS.h>
 #include <ESPmDNS.h>
+#include <esp_wifi.h>
 
 // Include AsyncWebServer after WiFiManager to avoid conflicts
 #include <ESPAsyncWebServer.h>
@@ -980,6 +981,18 @@ void setup() {
 
     // Load configuration from LittleFS and EEPROM
     loadConfig();
+
+    // Force ESP32 to use 2.4GHz only (channels 1-13)
+    // ESP32 hardware doesn't support 5GHz WiFi
+    WiFi.mode(WIFI_STA);
+    wifi_country_t country = {
+        .cc = "US",
+        .schan = 1,
+        .nchan = 13,
+        .policy = WIFI_COUNTRY_POLICY_MANUAL
+    };
+    esp_wifi_set_country(&country);
+    web_log_printf("WiFi forced to 2.4GHz (channels 1-13)");
 
     // WiFiManager setup
     WiFiManager wifiManager;
