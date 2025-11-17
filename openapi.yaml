@@ -1,0 +1,625 @@
+openapi: 3.0.3
+info:
+  title: ESP32 Uptime Monitor API
+  description: |
+    RESTful API for the ESP32 Uptime Monitor device.
+
+    Monitor up to 20 servers/websites with configurable notifications and group organization.
+
+    **Base URL:** `http://[device-ip]` or `http://esp32-uptime-monitor.local`
+
+    **Authentication:** None (device should be on secure local network)
+
+    **Note:** All POST endpoints expect `Content-Type: application/json`
+  version: "13"
+  contact:
+    name: ESP32-Uptime-Monitor
+    url: https://github.com/doobidoo/ESP32-Uptime-Monitor
+
+servers:
+  - url: http://10.0.1.16
+    description: Device IP address (update to your device's actual IP)
+  - url: http://esp32-uptime-monitor.local
+    description: mDNS hostname (if supported by your network)
+
+tags:
+  - name: Status
+    description: Retrieve device and server status information
+  - name: Server Management
+    description: Add, update, and delete monitored servers
+  - name: Groups
+    description: Manage server groups
+  - name: System
+    description: Device configuration and firmware updates
+
+paths:
+  /api/status:
+    get:
+      tags:
+        - Status
+      summary: Get all servers status
+      description: Returns comprehensive status for all 20 server slots including config, ping stats, and current HTTP status
+      operationId: getStatus
+      responses:
+        '200':
+          description: Status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+              example:
+                firmware_version: 13
+                general_config:
+                  ssid: "NightAndDay"
+                  gmt_offset: 1
+                targets:
+                  - id: 0
+                    http_code: 200
+                    log: "on;2025-11-17 08:31:08\n"
+                    ping:
+                      last: 70
+                      min: 34
+                      max: 101
+                    config:
+                      server_name: "Pi-Hole"
+                      group_name: "Production"
+                      enabled: true
+                      weburl: "http://10.0.1.56:8080/admin/"
+                      discord_webhook: "0"
+                      ntfy_url: "0"
+                      ntfy_priority: "default"
+                      telegram_bot_token: "0"
+                      telegram_chat_id_1: "0"
+                      telegram_chat_id_2: "0"
+                      telegram_chat_id_3: "0"
+                      http_get_url_on: "0"
+                      http_get_url_off: "0"
+                      online_message: "✅ {NAME} is back online: {URL}"
+                      offline_message: "🚨 {NAME} OUTAGE: {URL} (Code: {CODE})"
+                      check_interval_seconds: 20
+                      failure_threshold: 3
+                      recovery_threshold: 2
+
+  /api/logs:
+    get:
+      tags:
+        - Status
+      summary: Get device logs
+      description: Returns recent device logs including boot messages, WiFi status, and server check results
+      operationId: getLogs
+      responses:
+        '200':
+          description: Logs retrieved successfully
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                [2025-11-17 08:31:08] WiFi connected successfully!
+                [2025-11-17 08:31:08] IP Address: 10.0.1.16
+                [2025-11-17 08:31:08] Web server started on port 80
+                [2025-11-17 08:31:08] [Server 1] URL: http://10.0.1.56:8080/admin/, Status: 200, Ping: 70 ms
+
+  /api/groups:
+    get:
+      tags:
+        - Groups
+      summary: List all server groups
+      description: Returns array of unique group names from all enabled servers
+      operationId: getGroups
+      responses:
+        '200':
+          description: Groups retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+              example:
+                - "Production"
+                - "Staging"
+                - "Development"
+
+  /api/server/add:
+    post:
+      tags:
+        - Server Management
+      summary: Add new server
+      description: |
+        Adds a new server to monitor. Finds first available slot (out of 20 total).
+
+        **Note:** Device saves config immediately. No restart required.
+      operationId: addServer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddServerRequest'
+            examples:
+              minimal:
+                summary: Minimal server configuration
+                value:
+                  name: "My Server"
+                  group: "Production"
+                  url: "http://192.168.1.100"
+              complete:
+                summary: Complete configuration with notifications
+                value:
+                  name: "Production API"
+                  group: "Production"
+                  url: "http://api.example.com/health"
+                  check_interval: 30
+                  failure_threshold: 5
+                  recovery_threshold: 3
+                  online_message: "🟢 {NAME} restored"
+                  offline_message: "🔴 {NAME} DOWN - {URL} returned {CODE}"
+      responses:
+        '200':
+          description: Server added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                id: 5
+        '400':
+          description: Invalid request or no available slots
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                no_slots:
+                  summary: No available slots
+                  value:
+                    success: false
+                    error: "No available slots"
+                invalid_json:
+                  summary: Invalid JSON
+                  value:
+                    success: false
+                    error: "Invalid JSON"
+
+  /api/server/update:
+    post:
+      tags:
+        - Server Management
+      summary: Update server configuration
+      description: |
+        Updates an existing server's configuration. Only provided fields are updated.
+
+        **Note:** Device saves config immediately. No restart required.
+      operationId: updateServer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateServerRequest'
+            example:
+              id: 5
+              name: "Updated Server Name"
+              url: "http://new-url.example.com"
+              enabled: true
+              check_interval: 60
+              discord_webhook: "https://discord.com/api/webhooks/xxx/yyy"
+              ntfy_url: "https://ntfy.sh/my-topic"
+              ntfy_priority: "high"
+      responses:
+        '200':
+          description: Server updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/server/delete:
+    post:
+      tags:
+        - Server Management
+      summary: Delete (disable) server
+      description: |
+        Disables a server by setting enabled=false and clearing its URL.
+
+        **Note:** Does not actually delete the slot, just marks it as available for reuse.
+      operationId: deleteServer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+              properties:
+                id:
+                  type: integer
+                  minimum: 0
+                  maximum: 19
+                  description: Server ID to delete (0-19)
+            example:
+              id: 5
+      responses:
+        '200':
+          description: Server deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+        '400':
+          description: Invalid server ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Invalid server ID"
+
+  /api/group/rename:
+    post:
+      tags:
+        - Groups
+      summary: Rename a group across all servers
+      description: |
+        Renames a group for all servers that belong to it.
+
+        **Note:** Changes all matching servers simultaneously. Device saves config immediately.
+      operationId: renameGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - old_name
+                - new_name
+              properties:
+                old_name:
+                  type: string
+                  description: Current group name
+                new_name:
+                  type: string
+                  description: New group name
+            example:
+              old_name: "Production"
+              new_name: "Prod"
+      responses:
+        '200':
+          description: Group renamed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  updated:
+                    type: integer
+                    description: Number of servers updated
+              example:
+                success: true
+                updated: 5
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/settings:
+    post:
+      tags:
+        - System
+      summary: Update device settings (legacy endpoint)
+      description: |
+        **⚠️ WARNING:** This endpoint restarts the device after saving settings.
+
+        Used for updating GMT offset and server configurations via form data.
+
+        **Note:** Prefer using `/api/server/update` for server changes (no restart).
+      deprecated: true
+      operationId: updateSettings
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                gmt_offset:
+                  type: integer
+                  description: GMT offset in hours
+      responses:
+        '200':
+          description: Settings saved, device restarting
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "OK"
+
+components:
+  schemas:
+    StatusResponse:
+      type: object
+      properties:
+        firmware_version:
+          type: integer
+          description: Firmware version number
+          example: 13
+        general_config:
+          type: object
+          properties:
+            ssid:
+              type: string
+              description: Connected WiFi SSID
+            gmt_offset:
+              type: integer
+              description: GMT offset in hours
+        targets:
+          type: array
+          description: Array of all 20 server slots
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/Target'
+
+    Target:
+      type: object
+      description: Server status and configuration
+      properties:
+        id:
+          type: integer
+          minimum: 0
+          maximum: 19
+          description: Server slot ID (0-19)
+        http_code:
+          type: integer
+          description: Last HTTP response code (0 if disabled/not checked)
+          example: 200
+        log:
+          type: string
+          description: Recent status change log (newline separated)
+        ping:
+          type: object
+          properties:
+            last:
+              type: integer
+              description: Last ping time in milliseconds
+            min:
+              type: integer
+              description: Minimum recorded ping
+            max:
+              type: integer
+              description: Maximum recorded ping
+        config:
+          $ref: '#/components/schemas/ServerConfig'
+
+    ServerConfig:
+      type: object
+      description: Server configuration
+      properties:
+        server_name:
+          type: string
+          maxLength: 32
+          description: Display name
+        group_name:
+          type: string
+          maxLength: 32
+          description: Group/category name
+        enabled:
+          type: boolean
+          description: Whether server is actively monitored
+        weburl:
+          type: string
+          maxLength: 128
+          description: URL to monitor (set to "0" to disable)
+        discord_webhook:
+          type: string
+          maxLength: 128
+          description: Discord webhook URL (or "0" to disable)
+        ntfy_url:
+          type: string
+          maxLength: 64
+          description: Ntfy URL (or "0" to disable)
+        ntfy_priority:
+          type: string
+          maxLength: 16
+          enum: [default, min, low, high, max, urgent]
+          description: Ntfy notification priority
+        telegram_bot_token:
+          type: string
+          maxLength: 50
+          description: Telegram bot token (or "0" to disable)
+        telegram_chat_id_1:
+          type: string
+          maxLength: 16
+          description: First Telegram chat ID
+        telegram_chat_id_2:
+          type: string
+          maxLength: 16
+          description: Second Telegram chat ID
+        telegram_chat_id_3:
+          type: string
+          maxLength: 16
+          description: Third Telegram chat ID
+        http_get_url_on:
+          type: string
+          maxLength: 128
+          description: HTTP URL to trigger when server comes online
+        http_get_url_off:
+          type: string
+          maxLength: 128
+          description: HTTP URL to trigger when server goes offline
+        online_message:
+          type: string
+          maxLength: 128
+          description: Message template for online notifications. Supports {NAME}, {URL}
+          example: "✅ {NAME} is back online: {URL}"
+        offline_message:
+          type: string
+          maxLength: 128
+          description: Message template for offline notifications. Supports {NAME}, {URL}, {CODE}
+          example: "🚨 {NAME} OUTAGE: {URL} (Code: {CODE})"
+        check_interval_seconds:
+          type: integer
+          minimum: 10
+          description: How often to check server (in seconds)
+          default: 60
+        failure_threshold:
+          type: integer
+          minimum: 1
+          description: Failed checks before triggering offline notification
+          default: 3
+        recovery_threshold:
+          type: integer
+          minimum: 1
+          description: Successful checks before triggering online notification
+          default: 2
+
+    AddServerRequest:
+      type: object
+      required:
+        - name
+        - url
+      properties:
+        name:
+          type: string
+          maxLength: 32
+          description: Server display name
+          example: "Production API"
+        group:
+          type: string
+          maxLength: 32
+          description: Group name
+          default: "Default"
+          example: "Production"
+        url:
+          type: string
+          maxLength: 128
+          description: Full URL to monitor (including http:// or https://)
+          example: "http://192.168.1.100:8080/health"
+        check_interval:
+          type: integer
+          minimum: 10
+          description: Check interval in seconds
+          default: 60
+        failure_threshold:
+          type: integer
+          minimum: 1
+          description: Failed checks before notification
+          default: 3
+        recovery_threshold:
+          type: integer
+          minimum: 1
+          description: Successful checks before recovery notification
+          default: 2
+        online_message:
+          type: string
+          maxLength: 128
+          description: Message for online notifications
+          default: "{NAME} is back online!"
+        offline_message:
+          type: string
+          maxLength: 128
+          description: Message for offline notifications
+          default: "{NAME} is down!"
+
+    UpdateServerRequest:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: integer
+          minimum: 0
+          maximum: 19
+          description: Server ID to update
+        name:
+          type: string
+          maxLength: 32
+        group:
+          type: string
+          maxLength: 32
+        url:
+          type: string
+          maxLength: 128
+        enabled:
+          type: boolean
+        check_interval:
+          type: integer
+          minimum: 10
+        failure_threshold:
+          type: integer
+          minimum: 1
+        recovery_threshold:
+          type: integer
+          minimum: 1
+        online_message:
+          type: string
+          maxLength: 128
+        offline_message:
+          type: string
+          maxLength: 128
+        discord_webhook:
+          type: string
+          maxLength: 128
+        ntfy_url:
+          type: string
+          maxLength: 64
+        ntfy_priority:
+          type: string
+          enum: [default, min, low, high, max, urgent]
+        telegram_bot_token:
+          type: string
+          maxLength: 50
+        telegram_chat_id_1:
+          type: string
+          maxLength: 16
+        telegram_chat_id_2:
+          type: string
+          maxLength: 16
+        telegram_chat_id_3:
+          type: string
+          maxLength: 16
+        http_get_url_on:
+          type: string
+          maxLength: 128
+        http_get_url_off:
+          type: string
+          maxLength: 128
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        id:
+          type: integer
+          description: Server ID (for add operations)
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          description: Error message
+          example: "Invalid JSON"

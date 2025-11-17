@@ -97,25 +97,51 @@ esptool.py --port /dev/ttyUSB0 write_flash 0x10000 ESP32_webstatusv13.bin
 3. Click "Add Server"
 4. Server appears immediately in the dashboard
 
-## API Endpoints
+## API Documentation
 
-The device provides a full RESTful API:
+The device provides a full RESTful API documented in **OpenAPI 3.0** format.
 
-### Status & Information
-- `GET /` - Web dashboard
+**📖 Full API Specification:** [openapi.yaml](openapi.yaml)
+
+**Interactive Documentation:**
+- View in [Swagger Editor](https://editor.swagger.io/) - paste openapi.yaml content
+- Generate client libraries for Python, JavaScript, Go, etc. using [OpenAPI Generator](https://openapi-generator.tech/)
+- Import into Postman/Insomnia for API testing
+
+### Quick Reference
+
+**Status & Information**
 - `GET /api/status` - Get all servers status (JSON)
 - `GET /api/logs` - Get device logs
 - `GET /api/groups` - List all server groups
 
-### Server Management
+**Server Management**
 - `POST /api/server/add` - Add new server
 - `POST /api/server/update` - Update server configuration
 - `POST /api/server/delete` - Delete/disable server
 - `POST /api/group/rename` - Rename group across all servers
 
-### System
-- `GET /update` - Firmware update page
-- `POST /updatefirmware` - Upload new firmware
+### Example Usage
+
+**Add a server:**
+```bash
+curl -X POST http://10.0.1.16/api/server/add \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Server",
+    "group": "Production",
+    "url": "http://192.168.1.100",
+    "check_interval": 60,
+    "failure_threshold": 3
+  }'
+```
+
+**Get status:**
+```bash
+curl http://10.0.1.16/api/status | jq
+```
+
+See [openapi.yaml](openapi.yaml) for complete request/response schemas and all available fields.
 
 ## Important Notes
 
